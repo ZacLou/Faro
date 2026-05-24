@@ -29,8 +29,19 @@ import {
   TRUSTLESS_WORK_PLATFORM_FEE,
   nominalToUSDCSmallestUnits,
 } from "@/lib/trustless-work/constants"
+import { EscrowStepper, useEscrowStepper } from "@/components/wallet/escrow-stepper"
+import { InvoiceTimeline } from "@/components/invoice/invoice-timeline"
 import type { Invoice } from "@/lib/product"
 import type { InitializeSingleReleaseEscrowPayload } from "@trustless-work/escrow/types"
+
+const INVEST_STEPS = [
+  { id: "init_prepare", label: "Preparando creación del escrow" },
+  { id: "init_sign", label: "Firmando creación en Freighter" },
+  { id: "init_send", label: "Enviando a la red" },
+  { id: "fund_prepare", label: "Preparando financiamiento" },
+  { id: "fund_sign", label: "Firmando financiamiento en Freighter" },
+  { id: "fund_send", label: "Enviando a la red" },
+] as const
 
 function amountToInvest(amount: number, discountPercent: number): number {
   return Math.round(amount * (1 - discountPercent / 100))
@@ -50,7 +61,7 @@ export default function MarketInvoiceDetailPage() {
   const params = useParams()
   const router = useRouter()
   const id = normalizeId(params?.id)
-  const { address, isConnected, signTransaction } = useStellarWalletKit()
+  const { address, isConnected, signTransaction, getWalletNetwork } = useStellarWalletKit()
   const { deployEscrow } = useInitializeEscrow()
   const { fundEscrow } = useFundEscrow()
   const { sendTransaction } = useSendTransaction()
@@ -68,6 +79,18 @@ export default function MarketInvoiceDetailPage() {
     toPay: number
   } | null>(null)
   const investInProgressRef = useRef(false)
+  const stepper = useEscrowStepper([...INVEST_STEPS])
+  // currentStepRef rastrea cuál paso está in_progress para marcarlo como
+  // failed si algo lanza durante esa etapa.
+  const currentStepRef = useRef<string | null>(null)
+  function beginStep(id: string, detail?: string) {
+    currentStepRef.current = id
+    stepper.start(id, detail)
+  }
+  function endStep(id: string) {
+    stepper.complete(id)
+    if (currentStepRef.current === id) currentStepRef.current = null
+  }
 
   useEffect(() => {
     if (!id) {
@@ -108,18 +131,46 @@ export default function MarketInvoiceDetailPage() {
     setInvestError(null)
     investInProgressRef.current = true
     setInvesting(true)
+    stepper.reset()
     try {
       const toPay = amountToInvest(invoice.amount, invoice.discountRatePercent)
-      const hasTw =
+      const hasApiKey =
         typeof process !== "undefined" &&
-        (process.env.NEXT_PUBLIC_API_KEY || process.env.NEXT_PUBLIC_TRUSTLESS_WORK_API_KEY) &&
-        invoice.debtorAddress
+        Boolean(
+          process.env.NEXT_PUBLIC_API_KEY ||
+            process.env.NEXT_PUBLIC_TRUSTLESS_WORK_API_KEY
+        )
+
+      // El escrow on-chain es obligatorio para invertir: si no se puede crear,
+      // NO registramos la inversión en la base de datos. Avisamos con un error claro.
+      if (!hasApiKey) {
+        throw new Error(
+          "La integración de escrow (Trustless Work) no está configurada: falta la API key. No se puede crear el escrow, así que la inversión no se registró."
+        )
+      }
+      if (!invoice.debtorAddress) {
+        throw new Error(
+          "Esta factura no tiene asignada la wallet del deudor, así que no se puede crear el escrow on-chain. Pide que la factura se registre con la dirección Stellar (G...) del deudor e inténtalo de nuevo."
+        )
+      }
 
       let contractId: string | undefined
       let initTxHash: string | undefined
       let fundTxHash: string | undefined
 
-      if (hasTw && invoice.debtorAddress) {
+      {
+        // Validar que la wallet esté en testnet antes de firmar
+        const walletNet = await getWalletNetwork()
+        if (walletNet) {
+          const isWalletTestnet =
+            /testnet/i.test(walletNet.network) ||
+            walletNet.networkPassphrase?.includes("Test SDF")
+          if (!isWalletTestnet) {
+            throw new Error(
+              `Tu wallet (Freighter) está en la red "${walletNet.network}" pero la app usa Testnet. Cambia la red en Freighter a Testnet e intenta de nuevo.`
+            )
+          }
+        }
         // La API exige que platformAddress y disputeResolver tengan USDC. Si no hay plataforma configurada, usamos al inversionista (quien ya tiene USDC).
         const platformAddress =
           (typeof process !== "undefined" &&
@@ -155,6 +206,7 @@ export default function MarketInvoiceDetailPage() {
         }
 
         let initRes: Awaited<ReturnType<typeof deployEscrow>>
+        beginStep("init_prepare", "Calculando la transacción con Trustless Work…")
         try {
           initRes = await deployEscrow(initPayload, ESCROW_TYPE)
         } catch (apiErr: unknown) {
@@ -173,15 +225,28 @@ export default function MarketInvoiceDetailPage() {
           )
         }
         const contractIdFromInit = (initRes as { contractId?: string }).contractId
+        endStep("init_prepare")
 
+        beginStep("init_sign", "Confirma en la ventana de Freighter")
         const { signedTxXdr: signedInitXdr } = await signTransaction(
           initRes.unsignedTransaction
         )
-        const sendInitRes = await sendTransaction(signedInitXdr) as {
-          status?: string
-          contractId?: string
-          message?: string
-          transactionHash?: string
+        endStep("init_sign")
+
+        beginStep("init_send", "Enviando a Stellar…")
+        let sendInitRes: { status?: string; contractId?: string; message?: string; transactionHash?: string }
+        try {
+          sendInitRes = await sendTransaction(signedInitXdr) as typeof sendInitRes
+        } catch (sendErr: unknown) {
+          const axiosData = (sendErr as { response?: { data?: unknown } })?.response?.data
+          console.error("[Escrow] send-transaction 400 body:", JSON.stringify(axiosData))
+          const apiMsg =
+            typeof axiosData === "object" && axiosData !== null && "message" in axiosData
+              ? (axiosData as { message: string }).message
+              : typeof axiosData === "string"
+                ? axiosData
+                : null
+          throw new Error(apiMsg ? `Trustless Work: ${apiMsg}` : "Error al enviar la transacción del escrow. Verifica que Freighter esté en Testnet y tenga trustline USDC.")
         }
         if (sendInitRes?.status === "FAILED") {
           throw new Error(sendInitRes?.message || "Error al enviar la transacción del escrow")
@@ -191,7 +256,9 @@ export default function MarketInvoiceDetailPage() {
           throw new Error("No se recibió el contractId del escrow")
         }
         initTxHash = sendInitRes?.transactionHash
+        endStep("init_send")
 
+        beginStep("fund_prepare", "Calculando la transacción de financiamiento…")
         const fundRes = await fundEscrow(
           { contractId, amount: toPayMajor, signer: address },
           ESCROW_TYPE
@@ -201,18 +268,34 @@ export default function MarketInvoiceDetailPage() {
             (fundRes as { message?: string }).message || "No se pudo financiar el escrow"
           )
         }
+        endStep("fund_prepare")
+
+        beginStep("fund_sign", "Confirma en la ventana de Freighter")
         const { signedTxXdr: signedFundXdr } = await signTransaction(
           fundRes.unsignedTransaction
         )
-        const sendFundRes = await sendTransaction(signedFundXdr) as {
-          status?: string
-          message?: string
-          transactionHash?: string
+        endStep("fund_sign")
+
+        beginStep("fund_send", "Enviando a Stellar…")
+        let sendFundRes: { status?: string; message?: string; transactionHash?: string }
+        try {
+          sendFundRes = await sendTransaction(signedFundXdr) as typeof sendFundRes
+        } catch (sendErr: unknown) {
+          const axiosData = (sendErr as { response?: { data?: unknown } })?.response?.data
+          console.error("[Escrow] fund send-transaction 400 body:", JSON.stringify(axiosData))
+          const apiMsg =
+            typeof axiosData === "object" && axiosData !== null && "message" in axiosData
+              ? (axiosData as { message: string }).message
+              : typeof axiosData === "string"
+                ? axiosData
+                : null
+          throw new Error(apiMsg ? `Trustless Work (fund): ${apiMsg}` : "Error al financiar el escrow. Verifica que tengas USDC testnet (trustline y balance) en Freighter.")
         }
         if (sendFundRes?.status === "FAILED") {
           throw new Error(sendFundRes?.message || "Error al enviar el financiamiento del escrow")
         }
         fundTxHash = sendFundRes?.transactionHash
+        endStep("fund_send")
       }
 
       const res = await fetch(`/api/invoices/${id}/invest`, {
@@ -270,13 +353,14 @@ export default function MarketInvoiceDetailPage() {
       const isSetWalletFirst = err?.code === -3 || /set the wallet first/i.test(raw)
       const isUsdcTrustline =
         /receiver|required asset|USDC|trustline/i.test(raw)
-      setInvestError(
+      const friendly =
         isSetWalletFirst
           ? "La sesión de la wallet no está lista para firmar. Desconecta y vuelve a conectar tu wallet (Conectar wallet), luego intenta de nuevo."
           : isUsdcTrustline
             ? "Tu wallet debe tener USDC (trustline) para poder invertir y recibir el pago al vencimiento. Añade el activo USDC en tu wallet (p. ej. Freighter) y vuelve a intentar."
             : raw
-      )
+      setInvestError(friendly)
+      if (currentStepRef.current) stepper.fail(currentStepRef.current, friendly)
       console.error("Error al invertir:", e)
     } finally {
       investInProgressRef.current = false
@@ -448,6 +532,8 @@ export default function MarketInvoiceDetailPage() {
         </Link>
       </Button>
 
+      <InvoiceTimeline invoice={invoice} />
+
       <div className="glass-panel p-6">
         <div className="flex items-center gap-3 mb-6">
           <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
@@ -507,6 +593,12 @@ export default function MarketInvoiceDetailPage() {
               Requisito: tu wallet debe tener el activo USDC (trustline) para invertir y recibir el pago. Si no lo tienes, añádelo en tu wallet (p. ej. Freighter) antes de continuar.
             </p>
           </>
+        )}
+
+        {stepper.active && (
+          <div className="mt-4">
+            <EscrowStepper steps={stepper.steps} />
+          </div>
         )}
 
         {investError && (

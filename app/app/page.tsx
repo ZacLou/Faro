@@ -157,7 +157,11 @@ export default function DashboardPage() {
   ).length
   const pendingCollection = [
     ...providerInvoices.filter((i) => i.status === "financiada" && !i.providerClaimedAt),
-    ...investorInvoices.filter((i) => i.status === "financiada"),
+    ...investorInvoices.filter(
+      (i) =>
+        i.status === "financiada" ||
+        (i.status === "pagada" && Boolean(i.escrowNominalId) && !i.investorClaimedAt)
+    ),
   ].length
   const pendingPayAsDebtor = debtorInvoices.filter((i) => i.status === "financiada").length
 
@@ -177,10 +181,17 @@ export default function DashboardPage() {
       ? allActivity
       : allActivity.filter((row) => row.role === activityFilter)
 
-  const hasPendingActions = pendingPayAsDebtor > 0 || pendingCollectionProvider > 0
+  const pendingClaimInvestor = investorInvoices.filter(
+    (i) => i.status === "pagada" && Boolean(i.escrowNominalId) && !i.investorClaimedAt
+  ).length
+  const hasPendingActions =
+    pendingPayAsDebtor > 0 || pendingCollectionProvider > 0 || pendingClaimInvestor > 0
   const firstDebtorPending = debtorInvoices.find((i) => i.status === "financiada")
   const firstProviderPending = providerInvoices.find(
     (i) => i.status === "financiada" && !i.providerClaimedAt
+  )
+  const firstInvestorPending = investorInvoices.find(
+    (i) => i.status === "pagada" && Boolean(i.escrowNominalId) && !i.investorClaimedAt
   )
 
   if (!isConnected || !address) {
@@ -274,6 +285,14 @@ export default function DashboardPage() {
                     <Link href={`/app/claim-provider/${firstProviderPending.id}`}>
                       <Banknote className="h-3.5 w-3.5" />
                       Cobrar {pendingCollectionProvider} factura{pendingCollectionProvider !== 1 ? "s" : ""} (proveedor)
+                    </Link>
+                  </Button>
+                )}
+                {pendingClaimInvestor > 0 && firstInvestorPending && (
+                  <Button size="sm" asChild className="gap-1.5 bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600">
+                    <Link href={`/app/claim-investor/${firstInvestorPending.id}`}>
+                      <Banknote className="h-3.5 w-3.5" />
+                      Reclamar {pendingClaimInvestor} cobro{pendingClaimInvestor !== 1 ? "s" : ""} (inversionista)
                     </Link>
                   </Button>
                 )}
@@ -472,7 +491,9 @@ export default function DashboardPage() {
                                 ? `/app/pay/${row.id}`
                                 : row.role === "provider" && row.status === "financiada" && !row.providerClaimedAt
                                   ? `/app/claim-provider/${row.id}`
-                                  : `/app/market/${row.id}`
+                                  : row.role === "investor" && row.status === "pagada" && row.escrowNominalId && !row.investorClaimedAt
+                                    ? `/app/claim-investor/${row.id}`
+                                    : `/app/market/${row.id}`
                             }
                             className="hover:underline"
                           >
@@ -521,6 +542,13 @@ export default function DashboardPage() {
                               <Link href={`/app/claim-provider/${row.id}`}>
                                 <Banknote className="h-3.5 w-3.5" />
                                 Cobrar factura
+                              </Link>
+                            </Button>
+                          ) : row.role === "investor" && row.status === "pagada" && row.escrowNominalId && !row.investorClaimedAt ? (
+                            <Button asChild size="sm" className="gap-1.5 bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600">
+                              <Link href={`/app/claim-investor/${row.id}`}>
+                                <Banknote className="h-3.5 w-3.5" />
+                                Reclamar cobro
                               </Link>
                             </Button>
                           ) : (

@@ -24,14 +24,10 @@ const MILESTONE_INDEX = "0"
 const CLAIM_STEPS = [
   { id: "change", label: "Marcar hito como completado" },
   { id: "approve", label: "Aprobar hito" },
-  { id: "release", label: "Liberar fondos del escrow" },
+  { id: "release", label: "Liberar fondos del escrow nominal" },
 ] as const
 
-function amountToInvest(amount: number, discountPercent: number): number {
-  return Math.round(amount * (1 - discountPercent / 100))
-}
-
-export default function ClaimProviderPage() {
+export default function ClaimInvestorPage() {
   const params = useParams()
   const id = params.id as string
   const { address, isConnected, signTransaction } = useStellarWalletKit()
@@ -72,9 +68,9 @@ export default function ClaimProviderPage() {
 
   async function handleClaim() {
     if (!invoice || !address) return
-    const contractId = invoice.escrowId?.trim()
+    const contractId = invoice.escrowNominalId?.trim()
     if (!contractId) {
-      toast.error("Esta factura no tiene escrow de inversión")
+      toast.error("Esta factura no tiene escrow del nominal")
       return
     }
     setClaiming(true)
@@ -142,7 +138,7 @@ export default function ClaimProviderPage() {
       }
       await signAndSend("release", releaseRes.unsignedTransaction)
 
-      const res = await fetch(`/api/invoices/${id}/claim-by-provider`, {
+      const res = await fetch(`/api/invoices/${id}/claim-by-investor`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
@@ -154,7 +150,7 @@ export default function ClaimProviderPage() {
       setClaimTxHash(lastTxHash ?? null)
       setClaimSuccess(true)
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "Error al cobrar"
+      const msg = e instanceof Error ? e.message : "Error al reclamar el cobro"
       if (currentStepRef.current) stepper.fail(currentStepRef.current, msg)
       toast.error(msg)
     } finally {
@@ -162,15 +158,15 @@ export default function ClaimProviderPage() {
     }
   }
 
-  const isProvider =
-    invoice?.providerAddress &&
+  const isInvestor =
+    invoice?.investorAddress &&
     address &&
-    invoice.providerAddress.trim().toLowerCase() === address.trim().toLowerCase()
+    invoice.investorAddress.trim().toLowerCase() === address.trim().toLowerCase()
   const canClaim =
-    invoice?.status === "financiada" &&
-    isProvider &&
-    Boolean(invoice.escrowId?.trim()) &&
-    !invoice.providerClaimedAt
+    invoice?.status === "pagada" &&
+    isInvestor &&
+    Boolean(invoice.escrowNominalId?.trim()) &&
+    !invoice.investorClaimedAt
 
   if (claimSuccess && invoice) {
     return (
@@ -181,10 +177,10 @@ export default function ClaimProviderPage() {
           </div>
           <div className="space-y-1">
             <h3 className="font-display text-2xl font-bold text-foreground">
-              Cobro realizado
+              Cobro reclamado
             </h3>
             <p className="text-sm text-muted-foreground max-w-sm">
-              La liquidez de la factura <strong>{invoice.id}</strong> se liberó a tu wallet en <strong>USDC</strong>.
+              El nominal de la factura <strong>{invoice.id}</strong> se liberó a tu wallet en <strong>USDC</strong>.
             </p>
           </div>
           {claimTxHash && (
@@ -244,8 +240,6 @@ export default function ClaimProviderPage() {
     )
   }
 
-  const toReceive = amountToInvest(invoice.amount, invoice.discountRatePercent)
-
   return (
     <div className="flex flex-col gap-6 max-w-xl">
       <Button variant="ghost" size="sm" asChild className="gap-2 w-fit">
@@ -262,9 +256,9 @@ export default function ClaimProviderPage() {
           <Banknote className="h-6 w-6 text-primary" />
         </div>
         <div>
-          <h1 className="font-display text-xl font-bold">Cobrar factura</h1>
+          <h1 className="font-display text-xl font-bold">Reclamar cobro</h1>
           <p className="text-sm text-muted-foreground">
-            Soy el proveedor. Conecta tu wallet para recibir la liquidez (monto a invertir) en USDC.
+            Soy el inversionista. Conecta tu wallet para recibir el nominal en USDC.
           </p>
         </div>
       </div>
@@ -279,9 +273,9 @@ export default function ClaimProviderPage() {
           <span className="font-medium">{invoice.debtorName}</span>
         </div>
         <div className="flex justify-between text-sm">
-          <span className="text-muted-foreground">Monto a recibir (USDC)</span>
+          <span className="text-muted-foreground">Nominal a recibir (USDC)</span>
           <span className="font-semibold">
-            ${toReceive.toLocaleString("es-MX")} USDC
+            ${invoice.amount.toLocaleString("es-MX")} USDC
           </span>
         </div>
         <div className="flex justify-between text-sm">
@@ -290,14 +284,12 @@ export default function ClaimProviderPage() {
         </div>
       </div>
 
-      {invoice.status !== "financiada" && (
+      {invoice.status !== "pagada" && (
         <div className="rounded-lg border border-amber-500/50 bg-amber-500/10 p-4 text-sm">
-          {invoice.status === "en_mercado" ? (
-            <p>Esta factura aún no ha sido financiada. Solo puedes cobrar cuando un inversionista la haya financiado.</p>
-          ) : invoice.status === "pagada" ? (
-            <p>Esta factura ya está pagada. Si no cobraste antes, el escrow podría estar liberado; revisa tu wallet.</p>
+          {invoice.status === "financiada" ? (
+            <p>El deudor aún no ha pagado el nominal. Podrás reclamar el cobro cuando la factura esté «pagada».</p>
           ) : (
-            <p>Solo se puede cobrar una factura en estado «financiada».</p>
+            <p>Solo se puede reclamar el cobro de una factura en estado «pagada».</p>
           )}
           <Button variant="outline" size="sm" asChild className="mt-3">
             <Link href="/app">Ir al dashboard</Link>
@@ -305,37 +297,37 @@ export default function ClaimProviderPage() {
         </div>
       )}
 
-      {invoice.providerClaimedAt && (
+      {invoice.investorClaimedAt && (
         <div className="rounded-lg border border-green-500/50 bg-green-500/10 p-4 text-sm">
-          <p>Ya registraste el cobro de esta factura anteriormente.</p>
+          <p>Ya reclamaste el cobro de esta factura anteriormente.</p>
           <Button variant="outline" size="sm" asChild className="mt-3">
             <Link href="/app">Ir al dashboard</Link>
           </Button>
         </div>
       )}
 
-      {invoice.status === "financiada" && !invoice.providerClaimedAt && (
+      {invoice.status === "pagada" && !invoice.investorClaimedAt && (
         <>
           {!isConnected ? (
             <div className="rounded-lg border border-border bg-muted/30 p-5 text-center">
               <Wallet className="h-10 w-10 mx-auto text-muted-foreground mb-2" />
               <p className="font-medium">Conecta tu wallet</p>
               <p className="text-sm text-muted-foreground mt-1">
-                Usa el botón «Entrar» para conectar la wallet del proveedor. Solo esa wallet puede cobrar esta factura.
+                Usa el botón «Entrar» para conectar la wallet del inversionista. Solo esa wallet puede reclamar este cobro.
               </p>
             </div>
-          ) : !isProvider ? (
+          ) : !isInvestor ? (
             <div className="rounded-lg border border-amber-500/50 bg-amber-500/10 p-5 text-sm">
               <p className="font-medium text-amber-700 dark:text-amber-400">
-                Esta factura debe ser cobrada por la wallet del proveedor
+                Este cobro debe ser reclamado por la wallet del inversionista
               </p>
               <p className="mt-2 text-muted-foreground">
-                Tu wallet actual no coincide con la dirección del proveedor. Conecta la wallet con la que subiste esta factura.
+                Tu wallet actual no coincide con la dirección del inversionista. Conecta la wallet con la que financiaste esta factura.
               </p>
             </div>
-          ) : !invoice.escrowId ? (
+          ) : !invoice.escrowNominalId ? (
             <div className="rounded-lg border border-amber-500/50 bg-amber-500/10 p-4 text-sm">
-              <p>Esta factura no tiene escrow de inversión registrado. No se puede cobrar desde aquí.</p>
+              <p>Esta factura no tiene escrow del nominal registrado. No se puede reclamar desde aquí.</p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -349,10 +341,10 @@ export default function ClaimProviderPage() {
                 {claiming ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : null}
-                Cobrar factura (recibir USDC)
+                Reclamar cobro (recibir USDC)
               </Button>
               <p className="text-xs text-center text-muted-foreground">
-                Se liberará el escrow de inversión y recibirás el monto en tu wallet (firmarás 3 transacciones).
+                Se liberará el escrow del nominal y recibirás el monto en tu wallet (firmarás 3 transacciones).
               </p>
             </div>
           )}

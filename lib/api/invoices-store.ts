@@ -76,6 +76,9 @@ export function createInvoice(input: InvoiceCreateInput): Invoice {
     escrowId: null,
     escrowNominalId: null,
     providerClaimedAt: null,
+    investorClaimedAt: null,
+    financedAt: null,
+    paidAt: null,
     tokenizeTxHash: null,
   }
   data.invoices.push(invoice)
@@ -158,6 +161,7 @@ export function setInvoiceInvested(
   invoice.status = "financiada"
   invoice.investorAddress = investorAddress
   invoice.escrowId = escrowId ?? null
+  invoice.financedAt = new Date().toISOString()
   writeToFile(data)
   return invoice
 }
@@ -173,6 +177,7 @@ export function setInvoicePaid(
   invoice.status = "pagada"
   if (preservedDebtorAddress !== undefined) invoice.debtorAddress = preservedDebtorAddress
   if (escrowNominalId !== undefined) invoice.escrowNominalId = escrowNominalId ?? null
+  invoice.paidAt = new Date().toISOString()
   writeToFile(data)
   return invoice
 }
@@ -182,6 +187,15 @@ export function setProviderClaimed(id: string): Invoice | null {
   const invoice = data.invoices.find((i) => i.id === id)
   if (!invoice) return null
   invoice.providerClaimedAt = new Date().toISOString()
+  writeToFile(data)
+  return invoice
+}
+
+export function setInvestorClaimed(id: string): Invoice | null {
+  const data = readFromFile()
+  const invoice = data.invoices.find((i) => i.id === id)
+  if (!invoice) return null
+  invoice.investorClaimedAt = new Date().toISOString()
   writeToFile(data)
   return invoice
 }

@@ -34,6 +34,12 @@ export interface Invoice {
   escrowNominalId?: string | null
   /** Fecha ISO en que el proveedor cobró el escrow de inversión (para ocultar "Cobrar factura") */
   providerClaimedAt?: string | null
+  /** Fecha ISO en que el inversionista reclamó el escrow nominal (para ocultar "Reclamar cobro") */
+  investorClaimedAt?: string | null
+  /** Fecha ISO en que se financió (creación del escrow 1) */
+  financedAt?: string | null
+  /** Fecha ISO en que el deudor confirmó el pago (creación del escrow 2) */
+  paidAt?: string | null
   /** Hash de la tx Soroban que minteó tokens (tokenización on-chain), si aplica */
   tokenizeTxHash?: string | null
 }

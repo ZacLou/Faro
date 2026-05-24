@@ -1,7 +1,0 @@
-{
-  "dependencies": {
-    "@creit-tech/stellar-wallets-kit": "latest"
-  },
-  "devDependencies": {},
-  "shadcnComponents": ["button", "popover"]
-}

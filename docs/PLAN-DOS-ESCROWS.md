@@ -1,5 +1,7 @@
 # Plan de implementación: dos escrows y flujo de cobro
 
+> **Estado: implementado (mayo 2026).** Este documento es el plan original que se usó como guía. Para el estado actual del código, roles exactos, archivos y trade-offs reales, ver [ARCHITECTURE.md](ARCHITECTURE.md). Las Fases A, B y C de este plan ya están en `main`; los `escrowId` y `escrowNominalId` se crean desde el front con el SDK `@trustless-work/escrow`, y las páginas `/app/claim-provider/[id]` y `/app/claim-investor/[id]` liberan cada escrow.
+
 ## Objetivo
 
 Separar el flujo en **dos escrows** y ajustar acciones por rol:
