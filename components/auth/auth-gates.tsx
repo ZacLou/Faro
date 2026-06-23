@@ -1,24 +1,21 @@
 "use client"
 
-import { SignedIn as ClerkSignedIn, SignedOut as ClerkSignedOut } from "@clerk/nextjs"
-import { useAuthConfig } from "@/components/providers/auth-provider"
+import { useStellarWalletKit } from "@/lib/wallet/stellar-wallet-kit-provider"
 
 /**
- * Cuando Clerk no está configurado (build sin env), muestra siempre la rama "signed out".
- * Cuando está configurado, delega en Clerk.
+ * Renderiza hijos solo si hay wallet conectada (equivale a "signed in").
  */
-export function AuthSignedOut({ children }: { children: React.ReactNode }) {
-  const { clerkEnabled } = useAuthConfig()
-  if (!clerkEnabled) return <>{children}</>
-  return <ClerkSignedOut>{children}</ClerkSignedOut>
+export function AuthSignedIn({ children }: { children: React.ReactNode }) {
+  const { isConnected } = useStellarWalletKit()
+  if (!isConnected) return null
+  return <>{children}</>
 }
 
 /**
- * Cuando Clerk no está configurado, no muestra nada (equivale a signed out).
- * Cuando está configurado, delega en Clerk.
+ * Renderiza hijos solo si NO hay wallet conectada (equivale a "signed out").
  */
-export function AuthSignedIn({ children }: { children: React.ReactNode }) {
-  const { clerkEnabled } = useAuthConfig()
-  if (!clerkEnabled) return null
-  return <ClerkSignedIn>{children}</ClerkSignedIn>
+export function AuthSignedOut({ children }: { children: React.ReactNode }) {
+  const { isConnected } = useStellarWalletKit()
+  if (isConnected) return null
+  return <>{children}</>
 }

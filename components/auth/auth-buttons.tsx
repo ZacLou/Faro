@@ -1,44 +1,60 @@
 "use client"
 
-import Link from "next/link"
-import {
-  SignInButton as ClerkSignInButton,
-  SignUpButton as ClerkSignUpButton,
-  UserButton as ClerkUserButton,
-} from "@clerk/nextjs"
-import { useAuthConfig } from "@/components/providers/auth-provider"
-
-type SignInButtonProps = React.ComponentProps<typeof ClerkSignInButton>
-type SignUpButtonProps = React.ComponentProps<typeof ClerkSignUpButton>
-type UserButtonProps = React.ComponentProps<typeof ClerkUserButton>
+import { useStellarWalletKit } from "@/lib/wallet/stellar-wallet-kit-provider"
+import { Button } from "@/components/ui/button"
 
 /**
- * Si Clerk no está configurado, renderiza el hijo como enlace a /sign-in.
+ * Botón que abre el modal de wallet (equivale a "iniciar sesión").
  */
-export function AuthSignInButton({ children, ...props }: SignInButtonProps) {
-  const { clerkEnabled } = useAuthConfig()
-  if (!clerkEnabled) {
-    return <Link href="/sign-in">{children}</Link>
-  }
-  return <ClerkSignInButton {...props}>{children}</ClerkSignInButton>
+export function AuthSignInButton({
+  children,
+  className,
+}: {
+  children?: React.ReactNode
+  className?: string
+}) {
+  const { openConnectModal } = useStellarWalletKit()
+  return (
+    <button className={className} onClick={() => openConnectModal()}>
+      {children ?? "Conectar wallet"}
+    </button>
+  )
 }
 
 /**
- * Si Clerk no está configurado, renderiza el hijo como enlace a /sign-up.
+ * Alias de AuthSignInButton para compatibilidad con el resto de la UI.
  */
-export function AuthSignUpButton({ children, ...props }: SignUpButtonProps) {
-  const { clerkEnabled } = useAuthConfig()
-  if (!clerkEnabled) {
-    return <Link href="/sign-up">{children}</Link>
-  }
-  return <ClerkSignUpButton {...props}>{children}</ClerkSignUpButton>
+export function AuthSignUpButton({
+  children,
+  className,
+}: {
+  children?: React.ReactNode
+  className?: string
+}) {
+  const { openConnectModal } = useStellarWalletKit()
+  return (
+    <button className={className} onClick={() => openConnectModal()}>
+      {children ?? "Conectar wallet"}
+    </button>
+  )
 }
 
 /**
- * Si Clerk no está configurado, no renderiza nada.
+ * Muestra la dirección truncada de la wallet conectada + botón de desconectar.
  */
-export function AuthUserButton(props: UserButtonProps) {
-  const { clerkEnabled } = useAuthConfig()
-  if (!clerkEnabled) return null
-  return <ClerkUserButton {...props} />
+export function AuthUserButton(_props?: object) {
+  const { address, disconnect } = useStellarWalletKit()
+  if (!address) return null
+  const short = `${address.slice(0, 4)}…${address.slice(-4)}`
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      onClick={disconnect}
+      className="font-mono text-xs text-muted-foreground hover:text-destructive"
+      title={`Desconectar ${address}`}
+    >
+      {short} · Salir
+    </Button>
+  )
 }

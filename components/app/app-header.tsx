@@ -2,14 +2,8 @@
 
 import Link from "next/link"
 import Image from "next/image"
-import { Bell, Menu } from "lucide-react"
+import { Menu } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { AuthSignedIn, AuthSignedOut } from "@/components/auth/auth-gates"
-import {
-  AuthSignInButton,
-  AuthSignUpButton,
-  AuthUserButton,
-} from "@/components/auth/auth-buttons"
 import { ConnectWalletButton } from "@/components/wallet/connect-wallet-button"
 
 export function AppHeader({
@@ -47,36 +41,7 @@ export function AppHeader({
       </div>
 
       <div className="flex items-center gap-3">
-        <AuthSignedOut>
-          <AuthSignInButton mode="modal">
-            <Button variant="ghost" size="sm">
-              Iniciar sesión
-            </Button>
-          </AuthSignInButton>
-          <AuthSignUpButton mode="modal">
-            <Button size="sm">Registrarse</Button>
-          </AuthSignUpButton>
-        </AuthSignedOut>
-        <AuthSignedIn>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="relative text-muted-foreground hover:text-foreground"
-          >
-            <Bell className="h-4 w-4" />
-            <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-primary" />
-            <span className="sr-only">Notificaciones</span>
-          </Button>
-          <ConnectWalletButton />
-          <AuthUserButton
-            afterSignOutUrl="/"
-            appearance={{
-              elements: {
-                avatarBox: "h-9 w-9",
-              },
-            }}
-          />
-        </AuthSignedIn>
+        <ConnectWalletButton />
       </div>
     </header>
   )
